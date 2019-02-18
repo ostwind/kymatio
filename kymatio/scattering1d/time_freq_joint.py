@@ -9,6 +9,10 @@ from .filter_bank import (calibrate_scattering_filters,
     scattering_filter_factory)
 from .utils import cast_phi, cast_psi, compute_border_indices, compute_padding
 
+#TODO: 
+#   custom scattering_filter_factory
+#   do tests   
+
 class JointScattering(object):
     """The time frequency joint scattering transform
 

@@ -1,16 +1,16 @@
 """
 Testing all functions in filters_bank
 """
-from kymatio.scattering1d.filter_bank import adaptive_choice_P
-from kymatio.scattering1d.filter_bank import periodize_filter_fourier
-from kymatio.scattering1d.filter_bank import get_normalizing_factor
-from kymatio.scattering1d.filter_bank import compute_sigma_psi
-from kymatio.scattering1d.filter_bank import compute_temporal_support
-from kymatio.scattering1d.filter_bank import compute_xi_max
-from kymatio.scattering1d.filter_bank import morlet_1d
-from kymatio.scattering1d.filter_bank import calibrate_scattering_filters
-from kymatio.scattering1d.filter_bank import get_max_dyadic_subsampling
-from kymatio.scattering1d.filter_bank import gauss_1d
+from kymatio.scattering1d.filter_bank_joint import adaptive_choice_P
+from kymatio.scattering1d.filter_bank_joint import periodize_filter_fourier
+from kymatio.scattering1d.filter_bank_joint import get_normalizing_factor
+from kymatio.scattering1d.filter_bank_joint import compute_sigma_psi
+from kymatio.scattering1d.filter_bank_joint import compute_temporal_support
+from kymatio.scattering1d.filter_bank_joint import compute_xi_max
+from kymatio.scattering1d.filter_bank_joint import morlet_1d
+from kymatio.scattering1d.filter_bank_joint import calibrate_scattering_filters
+from kymatio.scattering1d.filter_bank_joint import get_max_dyadic_subsampling
+from kymatio.scattering1d.filter_bank_joint import gauss_1d
 import numpy as np
 import math
 import pytest

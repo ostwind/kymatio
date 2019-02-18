@@ -489,7 +489,6 @@ def compute_params_filterbank(sigma_low, Q, r_psi=math.sqrt(0.5), alpha=5.):
     # return results
     return xi, sigma, j
 
-
 def calibrate_scattering_filters(J, Q, r_psi=math.sqrt(0.5), sigma0=0.1,
                                  alpha=5.):
     """
