@@ -82,14 +82,14 @@ class JointScattering(object):
             self.J, self.pad_left, self.pad_left + self.T)
         # Finally, precompute the filters
         # need to modify scattering_filter_factory to output psi2_time, psi2_freq
-        phi_f, psi1_f, psi2_time, psi2_freq, _ = scattering_filter_factory_joint(
+        phi_f, psi1_f, psi2_f , _ = scattering_filter_factory(
             self.J_pad, self.J, self.Q, normalize=self.normalize,
             to_torch=True, criterion_amplitude=self.criterion_amplitude,
             r_psi=self.r_psi, sigma0=self.sigma0, alpha=self.alpha,
             P_max=self.P_max, eps=self.eps)
+
         self.psi1_f = psi1_f
-        self.psi2_time = psi2_time
-        self.psi2_freq = psi2_freq
+        self.psi2_f = psi2_f
         self.phi_f = phi_f
         self._type(torch.FloatTensor)
 
@@ -211,7 +211,9 @@ class JointScattering(object):
                 self.J, self.Q, max_order=self.max_order, detail=True)
         else:
             size_scattering = 0
-        S = joint_scattering(x, self.psi1_f, self.psi2_f, self.phi_f,
+
+        # joint scattering call, assume psi2_time = psi2_freq 
+        S = joint_scattering(x, self.psi1_f, self.psi2_f, self.psi2_f, self.phi_f,
                        self.J, max_order=self.max_order, average=self.average,
                        pad_left=self.pad_left, pad_right=self.pad_right,
                        ind_start=self.ind_start, ind_end=self.ind_end,
@@ -433,8 +435,8 @@ def joint_scattering( x, psi1, psi2_freq, psi2_time, phi, J, pad_left=0, pad_rig
     else:
         S[()] = S0_J
 
-    # build (j_2_freq X theta_2^freq) for innermost loop of layer 2
-    psi2_freq_theta2_product = [ (n2, theta2) for n2 in range(len(psi2_freq)) for theta2 in [-1, 1] ] 
+    # store U1 for layer 2 computations, indexed by j1
+    U1_carryover = {}
 
     # First order:
     for n1 in range(len(psi1)):
@@ -445,6 +447,8 @@ def joint_scattering( x, psi1, psi2_freq, psi2_time, phi, J, pad_left=0, pad_rig
         U1_hat = subsample_fourier(U0_hat * psi1[n1][0], 2**k1)
         # Take the modulus
         U1 = modulus_complex(ifft1d_c2c(U1_hat))
+        U1_carryover[j1] = U1
+
         if average or max_order > 1:
             U1_hat = fft1d_c2c(U1)
         if average:
@@ -462,51 +466,93 @@ def joint_scattering( x, psi1, psi2_freq, psi2_time, phi, J, pad_left=0, pad_rig
         else:
             S[(n1,)] = S1_J
         
-        if max_order == 2:    
-            # 2nd order
-            # psi_j2^time and psi_j2^frequency are different, assume both are passed into this func
-            for n2 in range(len(psi2_time)):
-                j2_time = psi2_time[n2]['j']
+    # build innermost loop of layer 2
+    # for j2fr < (log Q + log j2), theta2 in [-1, 1]:
+    valid_j2_freqs = [ psi2_freq[n2]['j'] for n2 in range(len(psi2_freq)) if 0 + np.log( psi2_time[n2]['j']) > psi2_freq[n2]['j']  ]
+    psi2_freq_theta2_product = [ (j2_freq, theta2) for j2_freq in valid_j2_freqs for theta2 in [-1, 1] ] 
+    
+    # 2nd order
+    # psi_j2^time and psi_j2^frequency are different, assume both are passed into this func
+    for n2 in range(len(psi2_time)):
+        j2_time = psi2_time[n2]['j']
+        #k2_time = max(j2_time - oversampling, 0)
 
-                # preallocate array to collect time convolved coefficients
-                y_time = np.zeros(  (temporal_size ,  len(psi1)) )
+        # preallocate array to collect time convolved coefficients
+        y_time = np.zeros(  (temporal_size ,  len(psi1)  ) )
 
-                for n1 in range(len(psi1)):
-                    # same subsampling k2 as in scattering1D (?)
-                    k2_time = max(j2_time - k1 - oversampling, 0)
-                    
-                    # y_2^time x(t, j_1) = (U_1 x[j_1] * psi_j2^time)(t)
-                    # assuming subsampling factor = 2**k2_time
-                    # not sure how to access correct wavelet in psi2_time[n2], using k1
-                    time_fourier_product = subsample_fourier( U1 * psi2_time[n2][k1], 2**k2_time )
-                    y_time[ :, n1 ] = ifft1d_c2c(time_fourier_product)
-                    # GOAL 1 attempt
+        for n1 in range(len(psi1)):
+            j1 = psi1[n1]['j']
+            if j2_time > j1:
+                assert psi2_time[n2]['xi'] < psi1[n1]['xi']
+            
+                # same subsampling k2 as in scattering1D (?)
+                k1 = max(j1 - oversampling, 0)
+                k2_time = max( j2_time - k1 - oversampling, 0)
 
-                    for (n2, theta2) in psi2_freq_theta2_product:
-                        j2_freq = psi2_freq[n2]['j']
-                        k2_freq = max(j2_freq - k1 - oversampling, 0)
-                    
-                        #y_2^freq x(t, j1) = ( y_2^time * psi_j2^freq )(t, j1)
-                        freq_fourier_product = subsample_fourier( y_time[:, n1] * psi2_freq[n1][k1], 2**k2_freq )    
-                        y_freq = ifft1d_c2c(freq_fourier_product)
-                        # GOAL 2 attempt
+                # y_2^time x(t, j_1) = (U_1 x[j_1] * psi_j2^time)(t)
+                # assuming subsampling factor = 2**k2_time
+                # not sure how to access correct wavelet in psi2_time[n2], using k1
+                time_fourier_product = subsample_fourier( U1_carryover[j1] * psi2_time[n2][k1], 2**k2_time )
+                y_time[ :, n1 ] = ifft1d_c2c(time_fourier_product)
+                # GOAL 1 attempt
 
-                        # U_2^freq(t, j_1) = | y_2^freq |(t, j_1)
-                        U2_freq = modulus_complex(y_freq)
+                for (j2_freq, theta2) in psi2_freq_theta2_product:
+                    #j2_freq = psi2_freq[n2]['j']
+                    k2_freq = max(j2_freq - k2_time - oversampling, 0)
+                
+                    #y_2^freq x(t, j1) = ( y_2^time * psi_j2^freq )(t, j1)
+                    freq_fourier_product = subsample_fourier( y_time[:, n1] * psi2_freq[n1][k1], 2**k2_freq )    
+                    y_freq = ifft1d_c2c(freq_fourier_product)
+                    # GOAL 2 attempt
 
-                        # S2(t, j, j2^time, j2^freq, theta_2^freq) = ( U2^freq * phi )(t, j1)
-                        # how to pick low pass filter?
-                        joint_fourier_product = subsample_fourier( U2_freq * phi[k1 + k2_freq] )
-                        S2 = ifft1d_c2c( joint_fourier_product ) 
-                        # GOAL 3 attempt
+                    # U_2^freq(t, j_1) = | y_2^freq |(t, j_1)
+                    U2_freq = modulus_complex(y_freq)
 
-                        # trying to store S2 into S
-                        # if correct, go back to define S this way
-                        S[n1, n2, j2_time, j2_freq, theta2] = S2
+                    # Averaging
+                    # S2(t, j, j2^time, j2^freq, theta_2^freq) = ( U2^freq * phi )(t, j1)
+                    # correct subsampling?
+                    k2_freq_J = max(J - k2_freq - k2_time - k1 - oversampling, 0)
+                    joint_fourier_product = subsample_fourier( U2_freq * phi[k1 + k2_freq], 2**k2_freq_J )
+                    S2 = ifft1d_c2c( joint_fourier_product ) 
+                    # GOAL 3 attempt
 
-                #free time-convolved intermediate coefficients 
-                del y_time
+                    # trying to store S2 into S
+                    # if correct, go back to define S this way
+                    S[n1, n2, j2_time, j2_freq, theta2] = S2
+
+            #free time-convolved intermediate coefficients 
+        del y_time
+
     return S
+
+# ## Layer 1
+# for j1:
+#     # Time
+#     Y1 = (U0 * ψ[j1]) over time
+
+#     # Complex modulus
+#     U1[j1] = |Y1|
+
+#     # Averaging
+#     S1[j1] = U1[j1] * ϕ over time
+
+
+# ## Layer 2
+# for j2tm:
+#     preallocate array Y2tm. size (t, N/2**j2tm)
+#     for j1 < j2tm:
+#         # Time
+#         Y2tm = (U1[j1] * ψ[j1]) over time
+
+#         for j2fr < (log Q + log j2), theta2 in [-1, 1]:
+#             # Frequency
+#             Y2fr = (Y2tm * ψ[j2fr,theta2fr]) over j1
+
+#             # Complex modulus
+#             U2fr = |Y2fr|
+
+#             # Averaging
+#             S2(t,j1,j2tm,j2fr,theta2fr) = (U2fr * ϕ)(t,j1) over time
 
 def compute_minimum_support_to_pad(T, J, Q, criterion_amplitude=1e-3,
                                    normalize='l1', r_psi=math.sqrt(0.5),

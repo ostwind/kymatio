@@ -41,7 +41,7 @@
 # %    JOINT_TF_WAVELET_LAYER_1D, WAVELET_FACTORY_1D
 import math 
 from kymatio.scattering1d.filter_bank import *
- 
+
 def scattering_filter_factory_joint( J_support, J_scattering, Q, r_psi=math.sqrt(0.5),
                               criterion_amplitude=1e-3, normalize='l1',
                               to_torch=False, max_subsampling = None, max_time_subsampling=None, max_freq_subsampling=None,
@@ -56,6 +56,7 @@ def scattering_filter_factory_joint( J_support, J_scattering, Q, r_psi=math.sqrt
     # instantiate the dictionaries which will contain the filters
     phi_f = {}
     psi1_f = []
+    psi2_f = [] 
     psi2_freq, psi2_time = [], []
 
     # desired support size of filters, no subsampling
@@ -158,30 +159,4 @@ def scattering_filter_factory_joint( J_support, J_scattering, Q, r_psi=math.sqrt
                     psi_f[sub_k] = torch.from_numpy(
                         psi_f[sub_k]).view(-1, 1).repeat(1, 2)
 
-    # return results
     return phi_f, psi1_f, psi2_f, t_max_phi
-
-
-    return Wop, time_filters, freq_filters
-
-# function [Wop, time_filters, freq_filters] = ...
-#     joint_tf_wavelet_factory_1d(N,time_filt_opt,freq_filt_opt,scat_opt)
-
-# 	time_filters = filter_bank(N, time_filt_opt);
-# 	N_freq = 2^nextpow2(numel(time_filters{1}.psi.filter));
-# 	freq_filters = filter_bank(N_freq, freq_filt_opt);
-# 	scat_opt1 = scat_opt;
-# 	scat_opt1.phi_renormalize = 0;
-    
-#     Wop = cell(1,scat_opt.M+1);
-# 	Wop{1} = @(X)(wavelet_layer_1d(X, time_filters{1}, scat_opt1));
-	
-# 	for m = 1:scat_opt.M
-# 		time_filt_ind = min(numel(time_filters), m+1);
-# 		freq_filt_ind = min(numel(freq_filters), m+1);
-# 		Wop{1+m} = @(X)( ...
-#             joint_tf_wavelet_layer_1d(X, ...
-#             {freq_filters{freq_filt_ind},time_filters{time_filt_ind}}, ...
-#             scat_opt));
-#     end
-# end
